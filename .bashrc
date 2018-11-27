@@ -150,6 +150,7 @@ function lgappsFolder() {
 
     echo $BASE_PATH$BRANCH_PREFIX$1$BRANCH_POSTFIX
 }
+
 function goover {
     APPS_PATH='android/vendor/lge/apps/'
 
@@ -214,5 +215,39 @@ function goover {
         fi
 
     done
+}
+
+function goup {
+    PARAM=(${@})
+    RE='^[0-9]+$'
+    PATH_PREV=$(pwd)
+
+    if [[ $PARAM =~ $RE ]] ; then
+        BACK_UNTIL=$(printf '../%.s' $(eval "echo {1.."$PARAM"}"))
+
+        cd $BACK_UNTIL
+
+        PATH_NEW=$(pwd)
+
+    else
+
+#        PARAM=$PARAM"/"
+#        BACK_TO=$(expr ${PATH_PREV} : .*${PARAM})
+#        if [ ${BACK_TO} -eq "0" ]; then
+#            echo "folder ["$PARAM"] not found!"
+#            return 0;
+#        fi
+#        PATH_NEW=$(expr substr ${PATH_PREV} 1 ${BACK_TO})
+
+        PATH_NEW=$(pwd | sed "s/\(^.*${PARAM}[^\/]*\).*$/\1/g")
+
+        cd $PATH_NEW
+
+    fi
+
+    echo "I sent you..."
+    echo "From: ["$PATH_PREV"]"
+    echo "To: ["$PATH_NEW"]"
+
 }
 
