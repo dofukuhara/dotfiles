@@ -56,8 +56,65 @@ function grepim {
     grep -nHRI $params --color --exclude-dir=.git "$thing" .
 }
 
-function grepao {
+function oldgrepao {
     grep -nHRI "${@}" --color=always --exclude-dir=.git . | sort
+}
+
+function grepao {
+    if [ \( $# -eq 0 \) -o \( $# -eq 1 -a "$1" == "-h" \) ]
+    then
+        echo "Usage: grepao [OPTION...] <string>"
+        echo "GREPAO will look for the occurencies of *string* from this folder and all of sub-folders"
+        echo
+        echo " LIST OF OPTIONS:"
+        echo "    -f FILE   will only list occurrencies from the given *FILE*"
+        echo "    --ns      will disable the '| sort' from grep lookup"
+        echo "    --ng      will disable the '--exclude-dir=.git' param, so also searching into .git folder"
+        echo "    -v        verbose mode: will print the grep command that grepao will execute"
+    else
+
+        REGEX=""
+        FILE=""
+        EXCLUDE_GIT="--exclude-dir=.git"
+        SORT=1
+        VERBOSE=0
+
+        while [ "$1" != "" ]
+        do
+            if [ "$1" == "-f" ] ; then
+                shift
+                FILE="--include \*$1\*"
+            elif [ "$1" == "--ns" ]; then
+                SORT=0
+            elif [ "$1" == "-v" ]; then
+                VERBOSE=1
+            elif [ "$1" == "--ng" ] ; then
+                EXCLUDE_GIT=""
+            else
+                REGEX=$1
+            fi
+
+            shift
+        done
+
+        if [ -z "$REGEX" ] ; then
+            echo "No string was found for grep lookup. Please check grepao usage with 'grepao -h'"
+            return 1
+        fi
+
+        if [ ${SORT} -eq 1 ] ; then
+            grep -nHRI --color=always ${FILE} ${EXCLUDE_GIT} "${REGEX}" . | sort
+            SHOW_SORT="| sort"
+        else
+            grep -nHRI --color=always ${FILE} ${EXCLUDE_GIT} "${REGEX}" .
+            SHOW_SORT=""
+        fi
+
+        CMD="grep -nHR --color=always ${FILE} ${EXCLUDE_GIT} \"${REGEX}\" . ${SHOW_SORT}"
+        if [ ${VERBOSE} -eq 1 ] ; then
+            echo ${CMD}
+        fi
+    fi
 }
 
 function grepiao {
@@ -249,5 +306,15 @@ function goup {
     echo "From: ["$PATH_PREV"]"
     echo "To: ["$PATH_NEW"]"
 
+}
+
+function manifest_find() {
+
+    if [ $# -eq 0 ] ; then
+        echo "Please insert a project/folder to inspect"
+        return 1
+    else
+        repo manifest | grep -i $@
+    fi
 }
 
