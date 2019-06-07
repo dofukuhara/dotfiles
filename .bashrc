@@ -318,3 +318,247 @@ function manifest_find() {
     fi
 }
 
+function checkoutbranch {
+    arr=("$(git branch | awk -F ' +' '! /\(no branch\)/ {print $2}')")
+
+    select opt in $arr
+    do
+        if [ ! -z $opt ]; then
+            git checkout $opt
+            break;
+        fi
+    done
+}
+
+function findf {
+    if [ \( $# -eq 0 \) -o \( $# -eq 1 -a "$1" == "-h" \) ]
+    then
+        echo "Usage: findf [OPTION...] <file name"
+        echo "FINDF will look for the given file from this folder and all of sub-folders"
+        echo
+        echo " LIST OF OPTIONS:"
+        echo "    -i    will perform a case-insensitive query over file name"
+        echo "    -v    verbose mode: will print the find command that findf will execute"
+        echo "    -w    GO WILD - use wildcards at the beginning and end of the filename"
+        echo "    -h    will display the help/instructions"
+    else
+        unset FILETOCHECK
+        unset VERBOSE
+        PARAM="-name"
+        WILD=""
+
+        while [ "$1" != "" ]
+        do
+            if [ "$1" == "-i" ]; then
+                PARAM="-iname"
+            elif [ "$1" == "-v" ]; then
+                VERBOSE="true"
+            elif [ "$1" == "-w" ]; then
+                WILD="*"
+            else
+                FILETOCHECK="$1"
+            fi
+
+            shift
+        done
+
+        if [ -z "$FILETOCHECK" ] ; then
+            echo "No filename was passed as argumento to findf"
+        else
+            if [[ ! -z "$VERBOSE" ]] ; then
+                CMD="find . $PARAM \"$WILD$FILETOCHECK$WILD\""
+                echo "[VERBOSE MODE] Command issued:" $CMD
+                echo
+            fi
+            find . $PARAM "$WILD${FILETOCHECK}$WILD"
+
+        fi
+    fi
+
+}
+
+function emulator {
+    emulator_bin_path="~/Android/Sdk/emulator/emulator"
+    avds_list=$(eval "$emulator_bin_path -list-avds")
+
+    avds_list_array=($avds_list)
+    len=${#avds_list_array[@]}
+
+    if [ $len -eq 1 ]; then
+        eval $emulator_bin_path -avd "$avds_list" &
+        return;
+    fi
+
+    EXIT_OPTION=" EXIT"
+    avds_list=$avds_list$EXIT_OPTION
+
+    COL=$COLUMNS
+    COLUMNS=12
+    PS3=$'\n'"> "
+
+    select opt in $avds_list
+    do
+        if [[ $opt == "EXIT" ]]; then
+            echo "Exiting..."
+            COLUMNS=$COL
+            return 1
+        elif [ ! -z $opt ]; then
+            eval $emulator_bin_path -avd $opt &
+            break;
+        fi
+    done
+
+    COLUMNS=$COL
+}
+
+function getAndroidDevice {
+    devices="$(adb devices)"
+
+    PREFIX="List of devices attached"
+
+    devices_array=${devices//$PREFIX/}
+    devices_array=${devices_array//"device"/}
+
+    list=($devices_array)
+    len=${#list[@]}
+
+    if [ $len -eq 1  ]; then
+        echo "$list"
+        return;
+    fi
+
+    select opt in $devices_array
+    do
+        if [ ! -z $opt ]; then
+            echo $opt
+            break;
+        fi
+    done
+}
+
+function rununittest {
+    BASE_PAGSEGURO_REPO_PATH="app-myaccount-android"
+    LAST_SEGMENT_PATH=$(pwd | awk -F / '{print $NF}')
+
+    RED='\033[0;31m'
+    BLUE='\033[1;34m'
+    NC='\033[0m'
+
+    if [ $LAST_SEGMENT_PATH != $BASE_PAGSEGURO_REPO_PATH ]; then
+        echo "You need to be at \"$BASE_PAGSEGURO_REPO_PATH\" to run this test!"
+
+        SUG_PATH=$(pwd | sed "s/\(^.*${BASE_PAGSEGURO_REPO_PATH}[^\/]*\).*$/\1/g")
+
+        if [[ "${SUG_PATH}" =~ "${BASE_PAGSEGURO_REPO_PATH}" ]]; then
+            echo -e "Shouldn't this be running at: [${BLUE}"$SUG_PATH"${NC}] ?"
+        fi
+        return;
+    fi
+
+    DEVICE=$(getAndroidDevice)
+
+    echo -e "${RED}*** STOPPING ANY GRADLE PROCESS  ***${NC}"
+    ./gradlew --stop > log.txt
+
+    echo -e "${RED}*** GRADLE CLEAN PROCESS ***${NC}"
+    ./gradlew clean >> log.txt
+
+    echo -e "${RED}*** ASSEMBLE RELEASE FLAVOR ***${NC}"
+    ./gradlew app:assembleRelease >> log.txt
+
+    echo -e "${RED}*** GRADLE LINT VITAL RELEASE TASK ***${NC}"
+    ./gradlew app:lintVitalRelease >> log.txt
+
+    echo -e "${RED}*** ASSEMBLE Uiest FLAVOR ***${NC}"
+    ./gradlew app:assembleUitest >> log.txt
+
+    echo -e "${RED}*** ASSEMBLE AndroidTest APP ***${NC}"
+    ./gradlew app:assembleAndroidTest >> log.txt
+
+    echo -e "${RED}*** RUN UNIT TEST TASK ***${NC}"
+    ./gradlew app:testUitestUnitTest >> log.txt
+
+    PACKAGE_TEST=$(adb -s "$DEVICE" shell pm list package | grep myaccount.test)
+    if [ ${#PACKAGE_TEST} -ne 0 ]; then
+        echo -e "${RED}*** UNINSTALLING PREVIOUS PAGSEGURO TEST APP ***${NC}"
+        adb -s "$DEVICE" uninstall br.com.uol.ps.myaccount.test
+    fi
+
+    PACKAGE_MAIN=$(adb -s "$DEVICE" shell pm list package | grep myaccount)
+    if [ ${#PACKAGE_MAIN} -ne 0 ]; then
+        echo -e "${RED}*** UNINSTALLING PREVIOUS PAGSEGURO APP ***${NC}"
+        adb -s "$DEVICE" uninstall br.com.uol.ps.myaccount
+    fi
+
+    echo -e "${RED}*** INSTALLING PAGSEGURO APP ***${NC}"
+    adb -s "$DEVICE" install app/build/outputs/apk/uitest/app-uitest.apk
+
+    echo -e "${RED}*** INSTALLING PAGSEGURO TEST APP ***${NC}"
+    adb -s "$DEVICE" install app/build/outputs/apk/androidTest/uitest/app-uitest-androidTest.apk
+
+    echo -e "${RED}*** RUNNING UI INSTRUMENTED TESTS ***${NC}"
+    adb -s "$DEVICE" shell am instrument -w "br.com.uol.ps.myaccount.test/br.com.uol.ps.myaccount.custom.CustomRunner" >> log.txt
+
+}
+
+function activityOnTop {
+    device=$(getAndroidDevice)
+
+    adb -s "$device" shell dumpsys window windows | grep -E 'mCurrentFocus|mFocusedApp'
+}
+
+function fragmentOnTop {
+    device=$(getAndroidDevice)
+
+    package="br.com.uol.ps.myaccount"
+
+    # fragment_array=("$(adb -s $device shell dumpsys activity $package | grep -oE "Child\sFragmentManager{\w+\s+\w+\s(\w*)" | cut -d " " -f 4)")
+    fragment_array=("$(adb -s $device shell dumpsys activity $package | grep -A1 "Added Fragments" | grep -oE "#0:\s(\w*)" | cut -d " " -f 2)")
+    fragment_array=("$(echo $fragment_array | cut -d " " -f 2)")
+
+    echo -e "\nThe current fragment for package [$package] on top is [$fragment_array]"
+
+}
+
+
+function psopen {
+    device=$(getAndroidDevice)
+    adb -s "$device" shell am start -n br.com.uol.ps.myaccount/.MainActivity
+}
+
+function psclear {
+    device=$(getAndroidDevice)
+    adb -s "$device" shell pm clear br.com.uol.ps.myaccount
+}
+
+function pstestclear {
+    device=$(getAndroidDevice)
+    adb -s "$device" shell pm clear br.com.uol.ps.myaccount.test
+}
+
+function psuninstall {
+
+    RED='\033[0;31m'
+    BLUE='\033[1;34m'
+    NC='\033[0m'
+
+    device=$(getAndroidDevice)
+
+    PACKAGE_TEST=$(adb -s "$device" shell pm list package | grep myaccount.test)
+    if [ ${#PACKAGE_TEST} -ne 0 ]; then
+        echo -e "${RED}*** UNINSTALLING PREVIOUS PAGSEGURO TEST APP ***${NC}"
+        adb -s "$device" uninstall br.com.uol.ps.myaccount.test
+    else
+        echo -e "${BLUE}*** Package [br.com.uol.ps.myaccount.text] is not installed in the device ***${NC}"
+    fi
+
+    PACKAGE_MAIN=$(adb -s "$device" shell pm list package | grep myaccount)
+    if [ ${#PACKAGE_MAIN} -ne 0 ]; then
+        echo -e "${RED}*** UNINSTALLING PREVIOUS PAGSEGURO APP ***${NC}"
+        adb -s "$device" uninstall br.com.uol.ps.myaccount
+    else
+        echo -e "${BLUE}*** Package [br.com.uol.ps.myaccount] is not installed in the device ***${NC}"
+    fi
+
+}
+
