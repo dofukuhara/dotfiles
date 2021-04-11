@@ -14,9 +14,15 @@ cd $current_path
 alias upbash='vim /home/douglas.fukuhara/.bashrc'
 alias upvim='vim /home/douglas.fukuhara/.vimrc'
 alias refri='source /home/douglas.fukuhara/.bashrc'
+
 alias gits='git status'
 alias gitp='git pull'
 alias gitd='git diff '
+alias gitb='git branch'
+alias gitl='git log'
+alias gitlol='gitl --oneline'
+alias gitfp='git fetch --prune && git pull'
+
 alias upapps='repo sync -j16 .'
 
 #Fukuhara - Custom functions
@@ -378,37 +384,59 @@ function findf {
 }
 
 function emulator {
-    emulator_bin_path="~/Android/Sdk/emulator/emulator"
-    avds_list=$(eval "$emulator_bin_path -list-avds")
+    WRITABLE_SYSTEM=""
 
-    avds_list_array=($avds_list)
-    len=${#avds_list_array[@]}
-
-    if [ $len -eq 1 ]; then
-        eval $emulator_bin_path -avd "$avds_list" &
-        return;
-    fi
-
-    EXIT_OPTION=" EXIT"
-    avds_list=$avds_list$EXIT_OPTION
-
-    COL=$COLUMNS
-    COLUMNS=12
-    PS3=$'\n'"> "
-
-    select opt in $avds_list
-    do
-        if [[ $opt == "EXIT" ]]; then
-            echo "Exiting..."
-            COLUMNS=$COL
-            return 1
-        elif [ ! -z $opt ]; then
-            eval $emulator_bin_path -avd $opt &
-            break;
+    if [ $# -eq 1 -a "$1" == "-h" ]
+    then
+        echo -e "\nUsage: emulator [OPTION...]"
+        echo "EMULATOR will launch any Android Emulator (AVD) that is current configured for the current user"
+        echo
+        echo " LIST OF OPTIONS:"
+        echo "     --ws    Will launch AVD with --writable-system flag enabled"
+        echo "     -h      Help instructions for Emulator"
+        echo
+    else
+      while [ "$1" != "" ]
+      do
+        if [ "$1" == "--ws" ]; then
+          WRITABLE_SYSTEM="-writable-system"
         fi
-    done
 
-    COLUMNS=$COL
+        shift
+      done
+
+      emulator_bin_path="~/Library/Android/sdk/emulator/emulator"
+      avds_list=$(eval "$emulator_bin_path -list-avds")
+
+      avds_list_array=($avds_list)
+      len=${#avds_list_array[@]}
+
+      if [ $len -eq 1 ]; then
+          eval $emulator_bin_path "$WRITABLE_SYSTEM" -avd "$avds_list" &
+          return;
+      fi
+
+      EXIT_OPTION=" EXIT"
+      avds_list=$avds_list$EXIT_OPTION
+
+      COL=$COLUMNS
+      COLUMNS=12
+      PS3=$'\n'"> "
+
+      select opt in $avds_list
+      do
+          if [[ $opt == "EXIT" ]]; then
+              echo "Exiting..."
+              COLUMNS=$COL
+              return 1
+          elif [ ! -z $opt ]; then
+              eval $emulator_bin_path "$WRITABLE_SYSTEM" -avd "$opt" &
+              break;
+          fi
+      done
+
+      COLUMNS=$COL
+    fi
 }
 
 function getAndroidDevice {
@@ -520,7 +548,6 @@ function fragmentOnTop {
 
 }
 
-
 function psopen {
     device=$(getAndroidDevice)
     adb -s "$device" shell am start -n br.com.uol.ps.myaccount/.MainActivity
@@ -562,3 +589,360 @@ function psuninstall {
 
 }
 
+function zipSenha {
+
+    file_name=${@}
+    zip_file=$(echo $file_name | sed 's/\(.*\)\..*/\1/').zip
+
+    zip -e $zip_file $file_name
+}
+
+function come {
+
+    local commit_type_arr
+    local issue_type
+    local jira_issue
+    local commit_message
+    local jira_regex
+    local yes_no_option
+
+    commit_type_arr="IMPROVEMENT BUGFIX FEATURE HOTFIX EXIT"
+    jira_regex="^[A-Z]+-[0-9]+$"
+    yes_no_option="SIM NÃO EXIT"
+
+    echo "Selecione o tipo de atividade:"
+    select opt in $commit_type_arr
+    do
+        if [ ! -z $opt ];
+        then
+            if [ $opt == "EXIT" ];
+            then
+                return 0
+            else
+                issue_type=$opt
+                break
+            fi
+        fi
+    done
+
+    echo
+    read -p 'Jira Issue: ' jira_issue
+    if [[ ! $jira_issue =~ $jira_regex ]];
+    then
+        echo "O JiraID deve ser informado no formato no seguinte padrão: [A-Z]+-[0-9]+"
+        return 1
+    fi
+    echo
+    read -p 'Commit Messagem: ' commit_message
+    echo
+
+    echo "Deseja apenas mostrar o comando?"
+    select opt in $yes_no_option
+    do
+        if [ ! -z $opt ];
+        then
+            if [ $opt == "EXIT" ];
+            then
+                return 0
+            elif [ $opt == "SIM" ]; then
+                echo
+                echo "git commit -m \"[$issue_type][$jira_issue] - $commit_message\""
+                break
+            else
+                git commit -m "[$issue_type][$jira_issue] - $commit_message"
+                break
+            fi
+        fi
+    done
+}
+
+function findAndClick {
+    device=$(getAndroidDevice)
+
+    adb -s "$device" shell "uiautomator dump | sleep 1s | cat /sdcard/window_dump.xml" | grep -oE ''"${@}"'.*bounds=\"\[\d*,\d*\]' | grep -oE '\[\d*,\d*\]' | head -1 | tr -d {}[] | awk -F',' '{print $1 " " $2}' | xargs adb shell input tap
+}
+
+function recordVideo {
+  device=$(getAndroidDevice)
+
+  DATE_PATH=$(date '+%Y-%m-%d')
+  VIDEO_TIME=$(date '+%Y-%m-%d_%X')
+
+  if [ \( $# -eq 0 \) ]
+  then
+    TEST_NAME=".mp4"
+  else
+    TEST_NAME="_"${@}".mp4"
+  fi
+
+  adb -s "$device" shell mkdir -p /sdcard/${DATE_PATH}/
+  adb -s "$device" shell screenrecord /sdcard/${DATE_PATH}/"${VIDEO_TIME//:/.}${TEST_NAME// /-}"
+}
+
+function copyVideos {
+
+  device=$(getAndroidDevice)
+
+  if [ \( $# -eq 0 \) ]
+  then
+    DEST_PATH="."
+  else
+    DEST_PATH=${@}
+  fi
+
+  adb -s "$device" shell ls /sdcard | grep -E "\d{4}-\d{2}-\d{2}|mp4"  |  xargs -I {}  adb -s "$device" pull /sdcard/{} "$DEST_PATH"
+}
+
+function adbinput {
+    device=$(getAndroidDevice)
+
+    if [ $1 = "-t" ]; then
+        input_param=${@:2:${#@}}
+        adb -s "$device" shell input text ${input_param// /%s}
+    elif [ $1 = "-k" ]; then
+        shift
+        adb -s "$device" shell input keyevent $1
+    else
+        adb -s "$device" shell input ${@}
+    fi
+
+}
+
+function copyPath {
+    local current_path=$(pwd)
+    echo -n $current_path | pbcopy
+}
+
+function copyCurrentBranch {
+
+  CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+  echo -n $CURRENT_BRANCH | pbcopy
+
+  echo "** Copied [$CURRENT_BRANCH] into clipboard area **"
+
+}
+
+function instrumentationTest {
+
+    RED='\033[0;31m'
+    NC='\033[0m'
+
+    if [ -z "${@}" ]
+    then
+        echo -e "${RED}Informar o teste a ser executado!${NC}"
+        return
+    fi
+    device=$(getAndroidDevice)
+    adb -s "$device" shell am instrument -w -e class "${@}" br.com.uol.ps.myaccount.test/br.com.uol.ps.myaccount.custom.CustomRunner
+}
+
+function adbw {
+
+    device=$(getAndroidDevice)
+
+    echo -e "\n"
+    adb -s "$device" ${@}
+}
+
+function goto() {
+    pagseguro_proj=$(find ~/Projects/Pagseguro -type d -maxdepth 2 -mindepth 2 | sort)
+
+    personal_proj=$(find ~/Projects/Personal -type d -maxdepth 1 -mindepth 1 | sort)
+
+    projects=${pagseguro_proj///\Users\/dofukuhara\/Projects\//}" "${personal_proj///\Users\/dofukuhara\/Projects\//}" EXIT"
+
+    COL=$COLUMNS
+    COLUMNS=12
+    select opt in $projects
+    do
+        if [[ $opt == "EXIT" ]]; then
+            echo "Exiting..."
+            COLUMNS=$COL
+            return 1
+        elif [ ! -z $opt ]; then
+            project_path="/Users/dofukuhara/Projects/"$opt
+            COLUMNS=$COL
+            break;
+        fi
+    done
+
+    cd $project_path
+}
+
+function bsReport() {
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    BLUE='\033[1;34m'
+    NC='\033[0m'
+
+    local authentication="$1"
+
+    BUILD_NAME=${@}
+
+    if [ -z "$BUILD_NAME" ]; then
+        echo -e "${RED}*** INFORMAR O 'Build Name' ***${NC}"
+    else
+        BS_BUILD_RESULT=$(curl -u "$authentication" --ssl-no-revoke -X GET https://api-cloud.browserstack.com/app-automate/espresso/builds/name/$BUILD_NAME -H 'Content-Type: application/json' )
+
+        echo $BS_BUILD_RESULT | python -m json.tool
+
+        OPTIONS="SIM NAO"
+        echo
+        echo
+        echo -e "${GREEN}*** Copiar JSON para o Clipboard? ***${NC}"
+        select opt in $OPTIONS
+        do
+            if [[ $opt == "SIM" ]]; then
+                echo $BS_BUILD_RESULT | python -m json.tool | pbcopy
+                echo -e "${BLUE}*** JSON copiado para o Clipboard! ***${NC}"
+                return 1
+            else
+                return 1
+            fi
+        done
+    fi
+}
+
+function getreleasedata {
+    local epoch_time_after="$1"
+    local epoch_time_before="$2"
+    local br_wf_name="$3"
+    local br_app_slug="$4"
+    local br_auth_token="$5"
+    local br_build_status_success="1"
+
+    if [ -z "$epoch_time_before" ]; then
+        epoch_time_before="1640908800"
+    fi
+    if [ -z "$epoch_time_after" ]; then
+        epoch_time="1609459200"
+    fi
+    local curl_command="curl --silent -X GET \"https://api.bitrise.io/v0.1/apps/${br_app_slug}/builds?sort_by=created_at&workflow=${br_wf_name}&after=${epoch_time_after}&before=${epoch_time_before}&status=${br_build_status_success}\" -H \"accept: application/json\" -H \"Authorization: ${br_auth_token}\""
+    local result_json number_of_items br_build_slug version_name current_path build_start_date
+    local tmp_dir="X${RAMDOM}P${RAMDON}T${RANDOM}O${RANDOM}"
+
+    current_path=$(pwd)
+    mkdir "$tmp_dir"
+
+    cd "$current_path/$tmp_dir"
+
+    result_json=$(eval $curl_command)
+    number_of_items=$(echo "$result_json" | jq '.data | length')
+
+    for index in $(seq $((number_of_items - 1)) 0); do
+        version_name=$(echo "$result_json" | jq .data[$index].commit_message | tr -d "\"")
+        br_build_slug=$(echo "$result_json" | jq .data[$index].slug | tr -d "\"")
+        build_start_date=$(echo  "$result_json" | jq .data[$index].triggered_at | tr -d "\"" | awk -F'T' '{split($1,a,"-"); printf("%s/%s/%s", a[3], a[2], a[1])}')
+
+        getbuildlog "$br_build_slug" "$version_name" "$build_start_date" "$br_wf_name"
+    done
+
+    cd "$current_path"
+    rm -rf "$tmp_dir"
+}
+
+function getbuildlog {
+    local build_slug=$1
+    local version_name=$2
+    local build_start_date=$3
+    local br_wf_name=$4
+    local br_app_slug="$5"
+    local br_auth_token="$6"
+    local bucket="$6"
+    local curl_command="curl --silent -X GET \"https://api.bitrise.io/v0.1/apps/${br_app_slug}/builds/${build_slug}/log\" -H \"accept: application/json\" -H \"Authorization: ${br_auth_token}\""
+    local result_json number_log_chunk last_log_chunk release_build_time debug_build_time number_of_tests testing_time
+    local version_major version_minor version_revision aws_path unit_test_file_name unit_test_file_ext
+    local RED='\033[0;31m'
+    local GREEN='\033[0;32m'
+    local BLUE='\033[1;34m'
+    local NC='\033[0m'
+
+    result_json=$(eval $curl_command)
+    number_log_chunk=$(echo "$result_json" | jq '.log_chunks | length')
+
+    last_log_chunk=$(echo "$result_json" | jq .log_chunks[$((number_log_chunk - 2))].chunk | tr -d "\"")$(echo "$result_json" | jq .log_chunks[$((number_log_chunk - 1))].chunk | tr -d "\"")
+
+    release_build_time=$(echo -e "$last_log_chunk" | grep "Build App Release" | awk -F'[|]' '{print $4}' | sed 's/ min//g' | tr -d ' ' | awk -F'.' '{printf "%d.%d min (00:%02d:%02d)", $1,$2,$1,($2*6)}')
+    debug_build_time=$(echo -e "$last_log_chunk" | grep "Build App Debug" | awk -F'[|]' '{print $4}' | sed 's/ min//g' | tr -d ' ' | awk -F'.' '{printf "%d.%d min (00:%02d:%02d)", $1,$2,$1,($2*6)}')
+
+    version_major=$(echo "$version_name" | sed 's/[^0-9.]//g' | cut -d'.' -f1)
+    version_minor=$(echo "$version_name" | sed 's/[^0-9.]//g' | cut -d'.' -f2)
+    version_revision=$(echo "$version_name" | sed 's/[^0-9.]//g' | cut -d'.' -f3)
+
+    if [ -z "$version_revision" ]; then
+        version_revision="0"
+    fi
+
+    unit_test_file_ext=".zip"
+    unit_test_file_name="UnitTest_$version_major.$version_minor.$version_revision"
+    aws_path="$bucket/$version_major.$version_minor/report/$unit_test_file_name$unit_test_file_ext"
+
+    aws s3 cp "$aws_path" "$unit_test_file_name$unit_test_file_ext"
+    tar xzf "$unit_test_file_name$unit_test_file_ext"
+    mv testDebugUnitTest "$unit_test_file_name"
+
+    number_of_tests=$(grep id=\"tests\" -A1 "$unit_test_file_name"/index.html | tail -n1 | awk -F'[<|>]' '{print $3}')
+    testing_time=$(grep id=\"duration\" -A1 "$unit_test_file_name"/index.html | tail -n1 | awk -F'[<|>]' '{print $3}' | awk -F'[m.s]' '{ h=0; m=$1; s=$2; if ( $3 > 30 ) s=s+1 ; printf "%02d:%02d:%02d", h,m,s }')
+
+    echo -e "${BLUE}Versão:${NC} ${RED}$version_name${NC} ${GREEN}($br_wf_name - $build_slug)${NC}"
+    echo -e "${BLUE}Data da Build:${NC} ${GREEN}$build_start_date${NC}"
+    echo -e "${BLUE}Tempo Release Build:${NC} ${GREEN}$release_build_time${NC}"
+    echo -e "${BLUE}Tempo Debug Build:${NC} ${GREEN}$debug_build_time${NC}"
+    echo -e "${BLUE}Nro de Testes Unitários:${NC} ${GREEN}$number_of_tests${NC}"
+    echo -e "${BLUE}Tempo de Execução dos Testes Unitários:${NC} ${GREEN}$testing_time${NC}"
+}
+
+function ios_message {
+    local version
+    local today=$(date "+%d/%m/%Y")
+    local last_day=$(date -v +7d "+%d/%m/%Y")
+    local yes_no_option="SIM NÃO EXIT"
+
+    read -p 'Qual a release: ' version
+
+    local line_1="Pessoal, versão \`$version\` do iOS liberada para 1% da base.\n"
+    local line_2="Liberado dia $today com previsão para 100% dia $last_day.\n"
+    local line_3="O Phased Release do iOS acontece de forma automática a partir da liberação na loja seguindo a regra:\n"
+    local rollout="Dia 1 - 1%\nDia 2 - 2%\nDia 3 - 5%\nDia 4 - 10%\nDia 5 - 20%\nDia 6 - 50%\nDia 7 - 100%\n"
+    local link_ref="Referência: https://help.apple.com/app-store-connect/#/dev3d65fcee1"
+
+
+    echo -e "\n\n"$line_1$line_2$line_3$rollout$link_ref
+
+    echo -e "\n\nDeseja copiar a mensagem para o clipboard?"
+    select opt in $yes_no_option; do
+        if [ ! -z $opt ]; then
+            if [ $opt == "EXIT" ]; then
+                return 0
+            elif [ $opt == "SIM" ]; then
+                echo -e $line_1$line_2$line_3$rollout$link_ref | pbcopy
+                echo -e "\nMessage copied to Clipboard!"
+                break
+            else
+                echo -e "\nOk, see you later ;)"
+                break
+            fi
+        fi
+    done
+}
+
+function changeJava {
+    local java_options="Java8 Java11 EXIT"
+
+    echo "Select a Java version:"
+    select opt in $java_options
+    do
+        if  [ ! -z $opt ]; then
+            if [ "$opt" == "EXIT" ]; then
+                return 0
+            elif [ "$opt" == "Java11" ]; then
+                export JAVA_HOME=$(/usr/libexec/java_home -v 11.0.10)
+                break
+            else
+                export JAVA_HOME=$(/usr/libexec/java_home -v 1.8.0_241)
+                break
+            fi
+        fi
+    done
+}
